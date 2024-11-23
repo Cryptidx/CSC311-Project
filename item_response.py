@@ -5,6 +5,7 @@ from utils import (
     load_train_sparse,
 )
 import numpy as np
+from matplotlib import pyplot as plt # TODO allowed to add?
 
 
 def sigmoid(x):
@@ -28,6 +29,14 @@ def neg_log_likelihood(data, theta, beta):
     # Implement the function as described in the docstring.             #
     #####################################################################
     log_lklihood = 0.0
+    for n in range(len(data["user_id"])):
+        i = data["user_id"][n]
+        j = data["question_id"][n]
+        c = data["is_correct"][n]
+        x = theta[i] - beta[j]
+        p_ij = sigmoid(x)
+        # update log likelihood based on the derived expression from (a)
+        log_lklihood += c * np.log(p_ij) + (1 - c) * np.log(1 - p_ij)
     #####################################################################
     #                       END OF YOUR CODE                            #
     #####################################################################
@@ -55,7 +64,23 @@ def update_theta_beta(data, lr, theta, beta):
     # TODO:                                                             #
     # Implement the function as described in the docstring.             #
     #####################################################################
-    pass
+    # First initiallize the gradients
+    theta_gradient = np.zeros_like(theta)
+    beta_gradient = np.zeros_like(beta)
+
+    for n in range(len(data["user_id"])):
+        i = data["user_id"][n]
+        j = data["question_id"][n]
+        c = data["is_correct"][n]
+        x = theta[i] - beta[j]
+        p_ij = sigmoid(x)
+        diff = c - p_ij
+        theta_gradient[i] += diff
+        beta_gradient[j] -= diff
+
+    # Update gradient parameters
+    theta += lr * theta_gradient
+    beta += lr * beta_gradient
     #####################################################################
     #                       END OF YOUR CODE                            #
     #####################################################################
@@ -76,20 +101,27 @@ def irt(data, val_data, lr, iterations):
     :return: (theta, beta, val_acc_lst)
     """
     # TODO: Initialize theta and beta.
-    theta = None
-    beta = None
+    theta = np.zeros(max(data["user_id"]) + 1)
+    beta = np.zeros(max(data["question_id"]) + 1)
 
     val_acc_lst = []
+    train_lld_lst = []
+    val_lld_lst = []
 
     for i in range(iterations):
-        neg_lld = neg_log_likelihood(data, theta=theta, beta=beta)
-        score = evaluate(data=val_data, theta=theta, beta=beta)
-        val_acc_lst.append(score)
-        print("NLLK: {} \t Score: {}".format(neg_lld, score))
+        neg_lld = neg_log_likelihood(data, theta, beta)
+        val_neg_lld = neg_log_likelihood(val_data, theta, beta)
+        train_lld_lst.append(-neg_lld)
+        val_lld_lst.append(-val_neg_lld)
+        val_score = evaluate(val_data, theta, beta)
+        val_acc_lst.append(val_score)
+        print(f"Iteration {i + 1}: NLLK = {neg_lld:.4f}, Val Score = {val_score:.4f}")
+
+        # Update parameters
         theta, beta = update_theta_beta(data, lr, theta, beta)
 
     # TODO: You may change the return values to achieve what you want.
-    return theta, beta, val_acc_lst
+    return theta, beta, val_acc_lst, train_lld_lst, val_lld_lst
 
 
 def evaluate(data, theta, beta):
@@ -122,7 +154,32 @@ def main():
     # Tune learning rate and number of iterations. With the implemented #
     # code, report the validation and test accuracy.                    #
     #####################################################################
-    pass
+    # Hyperparameters
+    lr = 0.01  # Learning rate
+    iterations = 100  # Number of iterations
+
+    # Train the model using IRT
+    theta, beta, val_acc_lst, train_lld_lst, val_lld_lst = irt(
+        train_data, val_data, lr, iterations
+    )
+
+    # Evaluate on validation and test data
+    val_acc = evaluate(val_data, theta, beta)
+    test_acc = evaluate(test_data, theta, beta)
+    print(f"Final Validation Accuracy: {val_acc:.4f}")
+    print(f"Final Test Accuracy: {test_acc:.4f}")
+
+    # Plot the training and validation log-likelihoods
+    iterations_range = range(1, iterations + 1)
+    plt.figure(figsize=(10, 6))
+    plt.plot(iterations_range, train_lld_lst, label="Training Log-Likelihood")
+    plt.plot(iterations_range, val_lld_lst, label="Validation Log-Likelihood")
+    plt.xlabel("Iteration")
+    plt.ylabel("Log-Likelihood")
+    plt.title("Training and Validation Log-Likelihoods Over Iterations")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
     #####################################################################
     #                       END OF YOUR CODE                            #
     #####################################################################
@@ -131,7 +188,28 @@ def main():
     # TODO:                                                             #
     # Implement part (d)                                                #
     #####################################################################
-    pass
+    # Select three questions
+    selected_questions = [17, 40, 85]  # Example question indices
+
+    # Create a range of theta values
+    theta_values = np.linspace(-5, 5, 100)
+
+    plt.figure(figsize=(10, 6))
+    for q in selected_questions:
+
+        if q < len(beta):
+            # Compute probability for each theta
+            p_theta = sigmoid(theta_values - beta[q])
+            plt.plot(theta_values, p_theta, label=f"Question {q}")
+        else:
+            print(f"Question index {q} is out of bounds.")
+
+    plt.xlabel("Theta (Student Ability)")
+    plt.ylabel("Probability of Correct Response")
+    plt.title("Probability of Correct Response vs. Student Ability")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
     #####################################################################
     #                       END OF YOUR CODE                            #
     #####################################################################
