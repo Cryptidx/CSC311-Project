@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib import pyplot as plt
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
@@ -73,7 +74,14 @@ class AutoEncoder(nn.Module):
         # Implement the function as described in the docstring.             #
         # Use sigmoid activations for f and g.                              #
         #####################################################################
-        out = inputs
+
+        # forward pass = inputs to code to inputs
+
+        code = self.g(inputs)
+        code_activated = torch.sigmoid(code)
+
+        pre_activation_out = self.h(code_activated)
+        out = torch.sigmoid(pre_activation_out)
         #####################################################################
         #                       END OF YOUR CODE                            #
         #####################################################################
@@ -102,6 +110,9 @@ def train(model, lr, lamb, train_data, zero_train_data, valid_data, num_epoch):
     optimizer = optim.SGD(model.parameters(), lr=lr)
     num_student = train_data.shape[0]
 
+    train_losses = []
+    valid_accuracies = []
+
     for epoch in range(0, num_epoch):
         train_loss = 0.0
 
@@ -116,18 +127,26 @@ def train(model, lr, lamb, train_data, zero_train_data, valid_data, num_epoch):
             nan_mask = np.isnan(train_data[user_id].unsqueeze(0).numpy())
             target[nan_mask] = output[nan_mask]
 
-            loss = torch.sum((output - target) ** 2.0)
+            error = torch.sum((output - target) ** 2.0)
+            weight_norm = model.get_weight_norm()
+            overall_weight_norm = (lamb / 2) * weight_norm
+            loss = error + overall_weight_norm
             loss.backward()
 
             train_loss += loss.item()
             optimizer.step()
 
+        train_losses.append(train_loss)
+
         valid_acc = evaluate(model, zero_train_data, valid_data)
+        valid_accuracies.append(valid_acc)
         print(
             "Epoch: {} \tTraining Cost: {:.6f}\t " "Valid Acc: {}".format(
                 epoch, train_loss, valid_acc
             )
         )
+
+    return train_losses, valid_accuracies
     #####################################################################
     #                       END OF YOUR CODE                            #
     #####################################################################
@@ -168,16 +187,37 @@ def main():
     # validation set.                                                   #
     #####################################################################
     # Set model hyperparameters.
-    k = None
-    model = None
+    k = 100
+    num_questions = zero_train_matrix.shape[1]
+    model = AutoEncoder(num_questions, k)
 
     # Set optimization hyperparameters.
-    lr = None
-    num_epoch = None
-    lamb = None
+    lr = 0.005
+    num_epoch = 65
+    lamb = 0.001
 
-    train(model, lr, lamb, train_matrix, zero_train_matrix, valid_data, num_epoch)
+    train_losses, valid_accuracies = train(model, lr, lamb, train_matrix, zero_train_matrix, valid_data, num_epoch)
     # Next, evaluate your network on validation/test data
+
+    valid_accuracy = evaluate(model, zero_train_matrix, valid_data)
+    print(f"Validation Accuracy: {valid_accuracy}")
+
+    test_accuracy = evaluate(model, zero_train_matrix, test_data)
+    print(f"Test Accuracy: {test_accuracy}")
+
+    # plotting train losses and validation accuracies
+
+    plt.plot(train_losses)
+    plt.xlabel("Epochs")
+    plt.ylabel("Training Loss")
+    plt.title("Training Loss vs Epochs")
+    plt.show()
+
+    plt.plot(valid_accuracies)
+    plt.xlabel("Epochs")
+    plt.ylabel("Validation Accuracies")
+    plt.title("Validation Accuracies vs Epochs")
+    plt.show()
 
     #####################################################################
     #                       END OF YOUR CODE                            #
