@@ -7,14 +7,8 @@ import torch.optim as optim
 import torch.utils.data
 import torch
 
-from utils import (
-    load_valid_csv,
-    load_public_test_csv,
-    load_train_sparse,
-)
 
-
-def load_data(base_path="./data"):
+def load_data(base_path="/content/drive/MyDrive/data"):
     """Load the data in PyTorch Tensor.
 
     :return: (zero_train_matrix, train_data, valid_data, test_data)
@@ -51,9 +45,10 @@ class AutoEncoder(nn.Module):
         super(AutoEncoder, self).__init__()
 
         # Define the layers
-        self.fc1 = nn.Linear(num_question, k)
-        self.fc2 = nn.Linear(k, k)
-        self.fc3 = nn.Linear(k, num_question)
+        self.fc1 = nn.Linear(num_question, num_question // 2)
+        self.fc2 = nn.Linear(num_question // 2, k)
+        self.fc3 = nn.Linear(k, num_question // 2)
+        self.fc4 = nn.Linear(num_question // 2, num_question)
 
     def get_weight_norm(self):
         """Return the L2 norm of the weights."""
@@ -70,10 +65,16 @@ class AutoEncoder(nn.Module):
         :return: reconstructed user vector.
         """
         # Relu Activation function
-        x = F.relu(self.fc1(inputs))
-        x = F.relu(self.fc2(x))
-        out = torch.sigmoid(self.fc3(x))
-        return out
+        intermediate = self.fc1(inputs)
+        intermediate_activated = F.relu(intermediate)
+        code = self.fc2(intermediate_activated)
+        code_activated = F.relu(code)
+        second_intermediate = self.fc3(code_activated)
+        second_intermediate_activated = F.relu(second_intermediate)
+        out = self.fc4(second_intermediate_activated)
+        out_activated = torch.sigmoid(out)
+
+        return out_activated
 
 
 def train(model, lr, lamb, train_data, zero_train_data, valid_data, num_epoch):
