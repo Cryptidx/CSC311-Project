@@ -1,46 +1,35 @@
-# TODO: complete this file.
 import numpy as np
-import random
-from utils import load_train_csv, load_valid_csv, load_public_test_csv,evaluate
+from utils import load_train_csv, load_train_sparse, load_valid_csv, load_public_test_csv, evaluate
 from knn import knn_impute_by_user_pred as knn_impute_by_user
 from neural_network import evaluate_with_predictions as evaluate_nn
 from item_response import evaluate_with_predictions as evaluate_irt
 from item_response import irt
 from neural_network import train, AutoEncoder
-from torch import FloatTensor
-from scipy.sparse import coo_matrix
-from torch.autograd import Variable
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 import torch.utils.data
 import torch
+from scipy.sparse import csr_matrix
+from sklearn.utils import resample
+
 
 basepath = "./data"
-
 train_data = load_train_csv(basepath)
 val_data = load_valid_csv(basepath)
 test_data = load_public_test_csv(basepath)
 
-
-users = max(train_data["user_id"]) + 1
-questions = max(train_data["question_id"]) + 1
-
-
 # our best vals
 # for knn and user version
-k_knn = 5
+k_knn = 11
 
 # for irt
 lr_irt = 0.01
 iterations = 50
-
 
 # and neurl nets
 lr_net = 0.005
 num_epoch = 65
 lamb = 0.001
 k_nn = 100
+
 
 def load_data_nn(train_matrix):
     """Load the data in PyTorch Tensor.
@@ -65,191 +54,138 @@ def load_data_nn(train_matrix):
 
     return zero_train_matrix, train_matrix
 
-def resample_data(data, sample_size=None):
+
+def resample_students(data, num_bootstraps, sample_size=None):
     """
-    Resample the training data with replacement.
+    Resample students while keeping questions consistent across bootstrapped groups.
 
     :param data: Original training data dictionary {user_id, question_id, is_correct}.
-    :param sample_size: Number of samples to draw. Defaults to the size of the original data.
-    :return: Resampled training data dictionary.
+    :param num_bootstraps: Number of bootstrapped datasets to generate.
+    :param sample_size: Number of students to sample. Defaults to the total number of unique users.
+    :return: List of resampled training data dictionaries.
     """
+    # Get unique user IDs
+    unique_users = list(set(data["user_id"]))
+
+    # Default to sampling all users
     if sample_size is None:
-        sample_size = len(data["is_correct"])
-    #
-    # indices = np.random.choice(len(data["is_correct"]), size=sample_size, replace=True)
-    # resampled_data = {
-    #     "user_id": [data["user_id"][i] for i in indices],
-    #     "question_id": [data["question_id"][i] for i in indices],
-    #     "is_correct": [data["is_correct"][i] for i in indices]
-    # }
+        sample_size = len(unique_users)
 
-    max_user_id = max(data["user_id"])
-    max_question_id = max(data["question_id"])
+    # Prepare the bootstrapped datasets
+    bootstrapped_datasets = []
 
-    indices = np.random.choice(len(data["is_correct"]), size=sample_size, replace=True)
-    resampled_data = {
-        "user_id": [data["user_id"][i] for i in indices if data["user_id"][i] <= max_user_id],
-        "question_id": [data["question_id"][i] for i in indices if data["question_id"][i] <= max_question_id],
-        "is_correct": [data["is_correct"][i] for i in indices]
-    }
+    for _ in range(num_bootstraps):
+        # Resample users with replacement
+        resampled_users = resample(unique_users, n_samples=sample_size, replace=True)
 
-    return resampled_data
+        # Collect all rows corresponding to the resampled users
+        resampled_data = {"user_id": [], "question_id": [], "is_correct": []}
+        for user in resampled_users:
+            # Find all rows for the current user
+            indices = [i for i, u in enumerate(data["user_id"]) if u == user]
+            # Append the user's responses to the resampled data
+            for idx in indices:
+                resampled_data["user_id"].append(data["user_id"][idx])
+                resampled_data["question_id"].append(data["question_id"][idx])
+                resampled_data["is_correct"].append(data["is_correct"][idx])
 
+        bootstrapped_datasets.append(resampled_data)
 
-def aggregate_predictions(predictions_list, weights=None):
-    """
-    Aggregate predictions using a weighted average.
+    return bootstrapped_datasets
 
-    :param predictions_list: List of predictions from models.
-    :param weights: List of weights for each model. Defaults to equal weights.
-    :return: Aggregated predictions.
-    """
-    if weights is None:
-        weights = [1 / len(predictions_list)] * len(predictions_list)
-
-    weights = np.array(weights)
-    aggregated = np.average(predictions_list, axis=0, weights=weights)
-    return aggregated
-
-#
-# def dictionary_to_sparse(data, num_users, num_questions):
-#     """
-#     Convert a dictionary to a sparse matrix.
-#
-#     :param data: Dictionary with "user_id", "question_id", "is_correct".
-#     :param num_users: Total number of users.
-#     :param num_questions: Total number of questions.
-#     :return: Sparse matrix representation of the data.
-#     """
-#
-#    # print(data)
-#     rows = np.array(data["user_id"])
-#     cols = np.array(data["question_id"])
-#     values = np.array(data["is_correct"])
-#
-#     np.set_printoptions(threshold=np.inf)
-#     #print(values)
-#
-#     sparse_matrix = coo_matrix((values, (rows, cols)), shape=(num_users, num_questions))
-#     sparse_matrix.maximum(1)
-#     # np.set_printoptions(threshold=np.inf)
-#     print(sparse_matrix)
-#     return sparse_matrix
-#
 
 def extract_validation_predictions(matrix, valid_data):
     """Extract predictions for the validation set from the full user-item matrix."""
     predictions = []
-    for user_id, question_id in zip(valid_data["question_id"],valid_data["user_id"]):
+    for user_id, question_id in zip(valid_data["user_id"], valid_data["question_id"]):
         predictions.append(matrix[user_id, question_id])
     return np.array(predictions)
 
-def dictionary_to_sparse(data, num_users, num_questions):
+
+def resample_sparse_matrix(matrix, n_bootstraps):
     """
-    Convert a dictionary to a dense matrix using for loops.
-    :param data: Dictionary with "user_id", "question_id", "is_correct".
-    :param num_users: Total number of users.
-    :param num_questions: Total number of questions.
-    :return: Dense matrix representation of the data.
+    Resample the rows of a sparse matrix with replacement.
+
+    :param matrix: 2D sparse matrix (csr_matrix or ndarray)
+    :param n_bootstraps: Number of bootstrap samples to generate.
+    :return: List of resampled matrices.
     """
-    # Initialize a dense matrix with zeros
-    matrix = np.zeros((num_users, num_questions), dtype=int)
+    # Ensure the input is a sparse CSR matrix
+    if not isinstance(matrix, csr_matrix):
+        matrix = csr_matrix(matrix)
 
-    # Populate the matrix with values from the data
-    for user, question, correct in zip(data["user_id"], data["question_id"], data["is_correct"]):
-        # Set the value to 1 if the user answered correctly
-        matrix[user, question] = 1 if correct == 1 else 0
+    num_users = matrix.shape[0]  # Number of rows (users)
+    bootstrapped_matrices = []
 
-    return matrix
+    for _ in range(n_bootstraps):
+        # Sample row indices with replacement
+        sampled_indices = np.random.choice(num_users, num_users, replace=True)
 
-resampled_data_knn = resample_data(train_data)
-resampled_data_irt = resample_data(train_data)
-resampled_data_nn = resample_data(train_data)
+        # Resample rows to create a new sparse matrix
+        resampled_matrix = matrix[sampled_indices, :]
+        bootstrapped_matrices.append(resampled_matrix)
 
+    return bootstrapped_matrices
 
-
-knn_sparse = dictionary_to_sparse(resampled_data_knn, users, questions)
-nn_sparse = dictionary_to_sparse(resampled_data_nn, users, questions)
 
 def main():
     """
-        gh
+        ensemble process
     """
-    zero_train_matrix, train_matrix = load_data_nn(nn_sparse)
 
+    np.random.seed(21)
+
+    # create bootstraps for knn and nn
+    sparse = load_train_sparse(basepath)
+    bootstraps_n_knn = resample_sparse_matrix(sparse, 2)
+    # create for irt
+    bootstrap_irt = resample_students(train_data, 1)
+
+    # irt turn
+    theta, beta, val_acc_lst, train_lld_lst, val_lld_lst = irt(
+        bootstrap_irt[0], val_data, lr_irt, iterations
+    )
+    pred_irt, val_acc_irt = evaluate_irt(val_data, theta, beta)
+    pred_irt_test, val_acc_irt_test = evaluate_irt(test_data, theta, beta)
+
+    # nn turn
+    zero_train_matrix, train_matrix = load_data_nn(bootstraps_n_knn[0].toarray())
     model = AutoEncoder(zero_train_matrix.shape[1], k_nn)
     train(model, lr_net, lamb, train_matrix, zero_train_matrix, val_data, num_epoch)
-
-    #
-    #
-    # # predictions irt2
-    theta, beta, val_acc_lst, train_lld_lst, val_lld_lst = irt(
-        train_data, val_data, lr_irt, iterations
-    )
-
-    pred_knn, val_acc_knn = knn_impute_by_user(knn_sparse, val_data, k_knn)
-    pred_irt, val_acc_irt = evaluate_irt(val_data, theta, beta)
-    pred_knn = extract_validation_predictions(pred_knn, val_data)
     pred_nn, val_acc_nn = evaluate_nn(model, zero_train_matrix, val_data)
+    pred_nn_test, val_acc_nn_test = evaluate_nn(model, zero_train_matrix, test_data)
 
+    # knn turn
+    pred_knn, val_acc_knn = knn_impute_by_user(bootstraps_n_knn[1].toarray(), val_data, k_knn)
+    pred_knn_test, val_acc_knn_test = knn_impute_by_user(bootstraps_n_knn[1].toarray(), test_data, k_knn)
 
+    # pred_knn = pred_knn.flatten()
+    print("KNN SHAPE", pred_knn.shape)
+    print("NN LENGTH", len(pred_nn))
+    print("IRT LENGTH", len(pred_irt))
 
-    print("Val accuracy knn")
-    print(val_acc_knn)
-    print("Val accuracy irt")
-    print(val_acc_irt)
-    print("Val accuracy nn")
-    print(val_acc_nn)
+    # we want the format to match with irt and nn so we can bag it
+    true_knn = extract_validation_predictions(pred_knn, val_data)
+    true_knn_test = extract_validation_predictions(pred_knn_test, test_data)
 
-    #print(len(pred_knn[0]))
+    # figuring out the weights now just by trial and error based on
+    # each parts' validation accuracy
 
-    #print(len(pred_knn))
+    print("Knn val accuracy: ", val_acc_knn)
+    print("nn val accuracy: ", val_acc_nn)
+    print("irt val accuracy: ", val_acc_irt)
 
-    final_predictions = (pred_knn + pred_nn + pred_irt) / 3
+    predictions = np.array([true_knn, pred_irt, pred_nn])
 
-    final_labels = (final_predictions >= 0.5).astype(int)
+    aggregated = np.mean(predictions, axis=0)
+    validation_acc = evaluate(val_data, aggregated)
+    print("Final validation accuracy is ", round(validation_acc, 3))
 
-    accuracy = np.mean(final_labels == val_data["is_correct"])
-    print(f"Validation Accuracy of Ensemble: {accuracy}")
-
-
-
-
-
-    # knn should have 1's 0's or nans (make them 0's)
-    # howeverrr mine currently has 2's 3's thats not right
-
-    # print("knn")
-    # # print(type(pred_knn))
-    # print(len(pred_knn))
-    # print(len(pred_knn[0]))
-    # print(pred_knn)
-
-    #
-    # print("irt")
-    # print(type(pred_irt))
-    # print(pred_irt)
-    # print(pred_irt)
-    # print(len(pred_irt))
-    #
-    # print("nn")
-    # print(type(pred_nn))
-    # print(len(pred_nn[0]))
-    # print(len(pred_nn))
-    # print(pred_nn)
-
-
-    # knn returns <class 'numpy.ndarray'>
-    # some 0's and such
-
-    # irt returns a list of fals's and trues. just a long ahh list
-
-    # nn returns a list of I think actual predictions?
-
-
-    #predictions_list = [predictions_knn, predictions_irt, predictions_nn]
-    #final_predictions = aggregate_predictions(predictions_list, weights=[0.5, 0.3, 0.2])
-
+    # now for test
+    predictions_test = np.array([true_knn_test, pred_irt_test, pred_nn_test])
+    aggregated_test = np.mean(predictions_test, axis=0)
+    test_acc = evaluate(test_data, aggregated_test)
+    print("Final test accuracy is ", round(test_acc, 3))
 
 
 if __name__ == "__main__":

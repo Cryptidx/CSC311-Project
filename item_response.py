@@ -134,8 +134,6 @@ def evaluate(data, theta, beta):
     :return: float
     """
 
-
-    # predictions here in pred
     pred = []
     for i, q in enumerate(data["question_id"]):
         u = data["user_id"][i]

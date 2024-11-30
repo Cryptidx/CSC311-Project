@@ -47,23 +47,11 @@ def knn_impute_by_user_pred(matrix, valid_data, k):
     """
 
     # closest user , then it gets their answr and compares
-    # nbrs = KNNImputer(n_neighbors=k)
-    # # We use NaN-Euclidean distance measure
-    # mat = nbrs.fit_transform(matrix)
-    # acc = sparse_matrix_evaluate(valid_data, mat)
-    # print(f"Validation Accuracy (k == {k}): {round(acc,3)}")
-
-    # TODO:                                                             #
-    # Implement the function as described in the docstring.             #
     nbrs = KNNImputer(n_neighbors=k)
     # We use NaN-Euclidean distance measure
-
-    # predictions here in mat
-    mat = nbrs.fit_transform(matrix.T)
-    acc = sparse_matrix_evaluate(valid_data, mat.T)
-    print(mat.shape)
-
-
+    mat = nbrs.fit_transform(matrix)
+    acc = sparse_matrix_evaluate(valid_data, mat)
+    print(f"Validation Accuracy (k == {k}): {round(acc,3)}")
 
     return mat, acc
 
@@ -102,65 +90,64 @@ def main():
     val_data = load_valid_csv("./data")
     test_data = load_public_test_csv("./data")
 
-
     print("Sparse matrix:")
     print(sparse_matrix)
     print("Shape of sparse matrix:")
     print(sparse_matrix.shape)
 
-    knn_impute_by_user_pred(sparse_matrix, val_data, 5)
+    knn_impute_by_user_pred(sparse_matrix, val_data, 11)
 
     print("#################################################")
-#
-#     #####################################################################                                                      #
-#     # Compute the validation accuracy for each k. Then pick k* with     #
-#     # the best performance and report the test accuracy with the        #
-#     # chosen k*.                                                        #
-#     #####################################################################
-#     ks = [1, 6, 11, 16, 21, 26]
-#     validation_accuracies = []
-#
-#     print("With User Based filtering:")
-#     for k in ks:
-#         acc = knn_impute_by_user(sparse_matrix, val_data, k)
-#         validation_accuracies.append(acc)
-#
-#     # plot user based
-#     plt.plot(ks, validation_accuracies, label="User-Based")
-#
-#     index = max(range(len(validation_accuracies)), key=lambda i: validation_accuracies[i])
-#     k = ks[index]
-#
-#     print(f"I choose k == {k}")
-#     acc = knn_impute_by_user(sparse_matrix, test_data, k)
-#     print(f"Test accuracy (k == {k}): {round(acc,3)}")
-#
-#     print("#################################################")
-#     print("With Item Based filtering:")
-#     validation_accuracies = []
-#
-#     for k in ks:
-#         acc = knn_impute_by_item(sparse_matrix, val_data, k)
-#         validation_accuracies.append(acc)
-#
-#     # plot item based
-#     plt.plot(ks, validation_accuracies, label="Item-Based")
-#     plt.xlabel("K values")
-#     plt.ylabel("Accuracy score")
-#     plt.title('Validation accuracy score based on different k values')
-#     plt.legend()
-#     plt.savefig("knn.png")
-#
-#     index = max(range(len(validation_accuracies)), key=lambda i: validation_accuracies[i])
-#     k = ks[index]
-#
-#     print(f"I choose k == {k}")
-#     acc = knn_impute_by_user(sparse_matrix, test_data, k)
-#     print(f"Test accuracy (k == {k}): {round(acc, 3)}")
-#     #####################################################################
-#     #                       END OF YOUR CODE                            #
-#     #####################################################################
-#
+
+    #####################################################################                                                      #
+    # Compute the validation accuracy for each k. Then pick k* with     #
+    # the best performance and report the test accuracy with the        #
+    # chosen k*.                                                        #
+    #####################################################################
+    ks = [1, 6, 11, 16, 21, 26]
+    validation_accuracies = []
+
+    print("With User Based filtering:")
+    for k in ks:
+        acc = knn_impute_by_user(sparse_matrix, val_data, k)
+        validation_accuracies.append(acc)
+
+    # plot user based
+    plt.plot(ks, validation_accuracies, label="User-Based")
+
+    index = max(range(len(validation_accuracies)), key=lambda i: validation_accuracies[i])
+    k = ks[index]
+
+    print(f"I choose k == {k}")
+    acc = knn_impute_by_user(sparse_matrix, test_data, k)
+    print(f"Test accuracy (k == {k}): {round(acc,3)}")
+
+    print("#################################################")
+    print("With Item Based filtering:")
+    validation_accuracies = []
+
+    for k in ks:
+        acc = knn_impute_by_item(sparse_matrix, val_data, k)
+        validation_accuracies.append(acc)
+
+    # plot item based
+    plt.plot(ks, validation_accuracies, label="Item-Based")
+    plt.xlabel("K values")
+    plt.ylabel("Accuracy score")
+    plt.title('Validation accuracy score based on different k values')
+    plt.legend()
+    plt.savefig("knn.png")
+
+    index = max(range(len(validation_accuracies)), key=lambda i: validation_accuracies[i])
+    k = ks[index]
+
+    print(f"I choose k == {k}")
+    acc = knn_impute_by_user(sparse_matrix, test_data, k)
+    print(f"Test accuracy (k == {k}): {round(acc, 3)}")
+    #####################################################################
+    #                       END OF YOUR CODE                            #
+    #####################################################################
+
 
 if __name__ == "__main__":
     main()

@@ -27,9 +27,11 @@ def load_data(base_path="./data"):
         test_data: A dictionary {user_id: list,
         user_id: list, is_correct: list}
     """
+
     train_matrix = load_train_sparse(base_path).toarray()
     valid_data = load_valid_csv(base_path)
     test_data = load_public_test_csv(base_path)
+    print(type(train_matrix))
 
     zero_train_matrix = train_matrix.copy()
     # Fill in the missing entries to 0.
