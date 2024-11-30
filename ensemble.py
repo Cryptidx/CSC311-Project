@@ -73,8 +73,8 @@ def resample_data(data, sample_size=None):
     :param sample_size: Number of samples to draw. Defaults to the size of the original data.
     :return: Resampled training data dictionary.
     """
-    # if sample_size is None:
-    #     sample_size = len(data["is_correct"])
+    if sample_size is None:
+        sample_size = len(data["is_correct"])
     #
     # indices = np.random.choice(len(data["is_correct"]), size=sample_size, replace=True)
     # resampled_data = {
@@ -136,6 +136,14 @@ def aggregate_predictions(predictions_list, weights=None):
 #     print(sparse_matrix)
 #     return sparse_matrix
 #
+
+def extract_validation_predictions(matrix, valid_data):
+    """Extract predictions for the validation set from the full user-item matrix."""
+    predictions = []
+    for user_id, question_id in zip(valid_data["question_id"],valid_data["user_id"]):
+        predictions.append(matrix[user_id, question_id])
+    return np.array(predictions)
+
 def dictionary_to_sparse(data, num_users, num_questions):
     """
     Convert a dictionary to a dense matrix using for loops.
@@ -170,19 +178,39 @@ def main():
     zero_train_matrix, train_matrix = load_data_nn(nn_sparse)
 
     model = AutoEncoder(zero_train_matrix.shape[1], k_nn)
-    train_losses, valid_accuracies = train(model, lr_net, lamb, train_matrix, zero_train_matrix, val_data, num_epoch)
+    train(model, lr_net, lamb, train_matrix, zero_train_matrix, val_data, num_epoch)
 
     #
     #
-    # # predictions irt
+    # # predictions irt2
     theta, beta, val_acc_lst, train_lld_lst, val_lld_lst = irt(
-        resampled_data_irt, val_data, lr_irt, iterations
+        train_data, val_data, lr_irt, iterations
     )
 
     pred_knn, val_acc_knn = knn_impute_by_user(knn_sparse, val_data, k_knn)
     pred_irt, val_acc_irt = evaluate_irt(val_data, theta, beta)
+    pred_knn = extract_validation_predictions(pred_knn, val_data)
     pred_nn, val_acc_nn = evaluate_nn(model, zero_train_matrix, val_data)
 
+
+
+    print("Val accuracy knn")
+    print(val_acc_knn)
+    print("Val accuracy irt")
+    print(val_acc_irt)
+    print("Val accuracy nn")
+    print(val_acc_nn)
+
+    #print(len(pred_knn[0]))
+
+    #print(len(pred_knn))
+
+    final_predictions = (pred_knn + pred_nn + pred_irt) / 3
+
+    final_labels = (final_predictions >= 0.5).astype(int)
+
+    accuracy = np.mean(final_labels == val_data["is_correct"])
+    print(f"Validation Accuracy of Ensemble: {accuracy}")
 
 
 
@@ -191,20 +219,25 @@ def main():
     # knn should have 1's 0's or nans (make them 0's)
     # howeverrr mine currently has 2's 3's thats not right
 
-    print("knn")
-    # print(type(pred_knn))
-    print(len(pred_knn))
-    print(len(pred_knn[0]))
+    # print("knn")
+    # # print(type(pred_knn))
+    # print(len(pred_knn))
+    # print(len(pred_knn[0]))
+    # print(pred_knn)
 
-    print(pred_irt)
-    print(len(pred_irt))
-    print("irt")
-    print(type(pred_irt))
-    print(pred_irt)
+    #
+    # print("irt")
+    # print(type(pred_irt))
+    # print(pred_irt)
+    # print(pred_irt)
+    # print(len(pred_irt))
+    #
+    # print("nn")
+    # print(type(pred_nn))
+    # print(len(pred_nn[0]))
+    # print(len(pred_nn))
+    # print(pred_nn)
 
-    print("nn")
-    print(type(pred_nn))
-    print(pred_nn)
 
     # knn returns <class 'numpy.ndarray'>
     # some 0's and such

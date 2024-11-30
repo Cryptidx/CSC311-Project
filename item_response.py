@@ -133,6 +133,9 @@ def evaluate(data, theta, beta):
     :param beta: Vector
     :return: float
     """
+
+
+    # predictions here in pred
     pred = []
     for i, q in enumerate(data["question_id"]):
         u = data["user_id"][i]
@@ -141,6 +144,29 @@ def evaluate(data, theta, beta):
         pred.append(p_a >= 0.5)
     return np.sum((data["is_correct"] == np.array(pred))) / len(data["is_correct"])
 
+
+# hannah function, i don't wanna mess up ur workflow
+def evaluate_with_predictions(data, theta, beta):
+    """
+    Evaluate the model given data and return the predictions and accuracy.
+
+    :param data: A dictionary {user_id: list, question_id: list, is_correct: list}
+    :param theta: Vector of user abilities.
+    :param beta: Vector of question difficulties.
+    :return: Tuple (predictions, accuracy)
+    """
+    predictions = []
+    for i, q in enumerate(data["question_id"]):
+        u = data["user_id"][i]
+        x = theta[u] - beta[q]
+        p_a = sigmoid(x)
+        predictions.append(p_a)
+
+    # Convert predictions to binary labels for accuracy calculation
+    binary_preds = np.array(predictions) >= 0.5
+    accuracy = np.sum(data["is_correct"] == binary_preds) / len(data["is_correct"])
+
+    return predictions, accuracy
 
 def main():
     train_data = load_train_csv("./data")

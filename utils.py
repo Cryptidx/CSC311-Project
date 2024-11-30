@@ -155,6 +155,7 @@ def sparse_matrix_evaluate(data, matrix, threshold=0.5):
     :param threshold: float
     :return: float
     """
+
     total_prediction = 0
     total_accurate = 0
     for i in range(len(data["is_correct"])):

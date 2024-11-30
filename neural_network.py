@@ -178,6 +178,31 @@ def evaluate(model, train_data, valid_data):
     return correct / float(total)
 
 
+# Hannah func for bagging
+def evaluate_with_predictions(model, train_data, valid_data):
+    """Evaluate the valid_data on the current model and return predictions."""
+    model.eval()
+    total = 0
+    correct = 0
+    predictions = []
+
+    for i, u in enumerate(valid_data["user_id"]):
+        inputs = Variable(train_data[u]).unsqueeze(0)
+        output = model(inputs)
+
+        # Store predictions (e.g., probabilities or binary outcomes)
+        # predictions.append(output[0][valid_data["question_id"][i]].item())
+        predictions.append(output[0][valid_data["question_id"][i]].item())
+
+        # Binary thresholding for accuracy computation
+        guess = predictions[-1] >= 0.5
+        if guess == valid_data["is_correct"][i]:
+            correct += 1
+        total += 1
+
+    accuracy = correct / float(total)
+    return predictions, accuracy
+
 def main():
     zero_train_matrix, train_matrix, valid_data, test_data = load_data()
 
